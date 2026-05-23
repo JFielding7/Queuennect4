@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::i8::MAX;
 use std::sync::{Arc, mpsc};
 use std::sync::atomic::{AtomicBool, Ordering};
 use dashmap::DashMap;
@@ -7,21 +8,35 @@ use crate::bitboard::{Board, COLS, TOTAL_CELLS};
 /// Default move ordering - center-first.
 const DEFAULT_MOVE_ORDER: [u32; COLS as usize] = [3, 2, 4, 1, 5, 0, 6];
 
-/// Number of helper threads (compile-time constant).
+/// Number of helper threads
 /// Total threads = HELPER_THREADS + 1 (master).
-const HELPER_THREADS: usize = 0;
+const HELPER_THREADS: usize = 11;
 
 const TRANSPOSITION_TABLE_SIZE: usize = 1 << 20;
 const TRANSPOSITION_TABLE_MASK: u64 = (TRANSPOSITION_TABLE_SIZE - 1) as u64;
 const TRANSPOSITION_TABLE_ALL_WAY_MAX_DEPTH: u32 = 18;
 
-const MIN_EVAL: i8 = -18;
-const MAX_EVAL: i8 = 18;
+const MIN_EVAL: i8 = -MAX_EVAL;
+const MAX_EVAL: i8 = (TOTAL_CELLS << 1) as i8;
 
 
 #[inline]
 fn win_eval(moves_played: u32) -> i8 {
-    ((TOTAL_CELLS >> 1) - (moves_played >> 1)) as i8
+    MAX_EVAL - moves_played as i8
+}
+
+
+#[inline]
+fn draw_eval(moves_played: u32, is_engine_first: bool) -> i8 {
+    let first_player_turn = (moves_played & 1) == 0;
+    let is_engine_turn = (is_engine_first && first_player_turn)
+        || (!is_engine_first && !first_player_turn);
+
+    if is_engine_turn {
+        moves_played as i8
+    } else {
+        -(moves_played as i8)
+    }
 }
 
 
@@ -134,12 +149,12 @@ fn evaluate_position(
     let curr_conn4 = board.current_player_connect4();
     let opp_conn4  = board.last_player_connect4();
 
-    if curr_conn4 && opp_conn4 { return 0; }
+    if curr_conn4 && opp_conn4 { return draw_eval(board.moves_played, board.is_engine_first); }
     if curr_conn4 { return win_eval(board.moves_played - 2); }
     if opp_conn4  { return -win_eval(board.moves_played - 1); }
 
-    // must come after above
-    if board.moves_played == TOTAL_CELLS { return 0; }
+    // must come after checks above
+    if board.moves_played == TOTAL_CELLS { return draw_eval(TOTAL_CELLS, board.is_engine_first); }
 
     for next in board.next_positions_ordered(&DEFAULT_MOVE_ORDER) {
         if !next.current_player_connect4() && next.last_player_connect4() {
@@ -186,11 +201,32 @@ fn evaluate_position(
     for next in board.next_positions_ordered(&DEFAULT_MOVE_ORDER) {
         let eval = if first_move {
             first_move = false;
-            -evaluate_position(&next, -beta, -alpha, transposition_table, node_count, stop)
+            -evaluate_position(
+                &next,
+                -beta,
+                -alpha,
+                transposition_table,
+                node_count,
+                stop
+            )
         } else {
-            let null_eval = -evaluate_position(&next, -alpha - 1, -alpha, transposition_table, node_count, stop);
+            let null_eval = -evaluate_position(
+                &next,
+                -alpha - 1,
+                -alpha,
+                transposition_table,
+                node_count,
+                stop
+            );
             if null_eval > alpha && null_eval < beta {
-                -evaluate_position(&next, -beta, -null_eval, transposition_table, node_count, stop)
+                -evaluate_position(
+                    &next,
+                    -beta,
+                    -null_eval,
+                    transposition_table,
+                    node_count,
+                    stop
+                )
             } else {
                 null_eval
             }
@@ -304,8 +340,12 @@ impl SmpEngine {
 
                             let mut nodes = 0u64;
                             evaluate_position(
-                                &board, MIN_EVAL, MAX_EVAL,
-                                &mut transposition_table, &mut nodes, &stop,
+                                &board,
+                                MIN_EVAL,
+                                MAX_EVAL,
+                                &mut transposition_table,
+                                &mut nodes,
+                                &stop
                             );
 
                             let _ = result_tx.send(WorkerResult { nodes });
@@ -313,7 +353,7 @@ impl SmpEngine {
                     }
                 }
             });
-        }
+        }//97912323
 
         SmpEngine {
             shared,
@@ -416,13 +456,13 @@ mod tests {
 
     #[test]
     fn test_start_position() {
-        let board = Board::from_str(
+        let board = Board::from_str_engine_second(
             ". . . . . . .
              . . . . . . .
              . . . . . . .
-             . . . . . . .
-             . . . . . . .
-             . . . . . . ."
+             . . . X . . .
+             . . . O . . .
+             . O . X . . X"
         );
 
         board.display();
@@ -435,6 +475,8 @@ mod tests {
             println!("Helper {} nodes: {}", i + 1, nodes);
         }
         println!("Total nodes: {}", node_counts.iter().sum::<u64>());
+
+        println!("Best Moves: {:?}", engine.best_moves(&board));
 
         assert_eq!(eval, 0, "Game should be a draw, got eval={}", eval);
     }

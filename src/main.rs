@@ -12,24 +12,24 @@ fn read_line() -> String {
 }
 
 fn main() {
-    let mut board = Board::starting_board();
-
     let engine = SmpEngine::new();
 
     println!("Queuenect 4 - pieces are inserted from the BOTTOM and push existing pieces up.");
 
-    let human_is_first = loop {
+    let engine_is_first = loop {
         print!("Go first or second? (1/2): ");
         io::stdout().flush().unwrap();
         match read_line().as_str() {
-            "1" => break true,
-            "2" => break false,
+            "1" => break false,
+            "2" => break true,
             _ => println!("Enter 1 or 2."),
         }
     };
 
-    let human_piece = if human_is_first { "X" } else { "O" };
-    let engine_piece = if human_is_first { "O" } else { "X" };
+    let mut board = Board::starting_board(engine_is_first);
+
+    let human_piece = if engine_is_first { "O" } else { "X" };
+    let engine_piece = if engine_is_first { "X" } else { "O" };
     println!("You are {}, engine is {}.\n", human_piece, engine_piece);
 
     loop {
@@ -38,7 +38,7 @@ fn main() {
         let curr_conn4 = board.current_player_connect4();
         let last_conn4 = board.last_player_connect4();
 
-        let last_was_human = if human_is_first {
+        let last_was_human = if engine_is_first {
             (board.moves_played & 1) == 1
         } else {
             (board.moves_played & 1) == 0
@@ -69,11 +69,11 @@ fn main() {
             break;
         }
 
-        let human_turn = human_is_first == ((board.moves_played & 1) == 0);
+        let human_turn = engine_is_first == ((board.moves_played & 1) == 1);
 
         if human_turn {
             let col = loop {
-                print!("Your move (0-6): ");
+                print!("Your move (0-6): {:?}", engine.best_moves(&board));
                 io::stdout().flush().unwrap();
 
                 match read_line().parse::<u32>() {

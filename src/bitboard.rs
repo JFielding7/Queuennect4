@@ -61,6 +61,8 @@ pub struct Board {
     pub opponent: u64,
     /// Total number of moves played so far
     pub moves_played: u32,
+    /// If Engine goes first
+    pub is_engine_first: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -188,14 +190,15 @@ impl Board {
         })
     }
 
-    pub fn starting_board() -> Board {
+    pub fn starting_board(is_engine_first: bool) -> Board {
         Board::from_str(
             ". . . . . . .
             . . . . . . .
             . . . . . . .
             . . . . . . .
             . . . . . . .
-            . . . . . . ."
+            . . . . . . .",
+            is_engine_first
         )
     }
 
@@ -210,7 +213,7 @@ impl Board {
     ///   - If O has exactly 1 fewer piece than X, it is O's turn.
     ///
     /// Panics (debug_assert) if counts differ by more than 1.
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_str(s: &str, is_engine_first: bool) -> Board {
         let cells: Vec<char> = s
             .split_whitespace()
             .map(|tok| {
@@ -273,7 +276,16 @@ impl Board {
             current,
             opponent,
             moves_played: (x_count + o_count) as u32,
+            is_engine_first,
         }
+    }
+
+    pub fn from_str_engine_first(s: &str) -> Self {
+        Self::from_str(s, true)
+    }
+
+    pub fn from_str_engine_second(s: &str) -> Self {
+        Self::from_str(s, false)
     }
 
     pub fn display(&self) {
@@ -310,7 +322,7 @@ mod tests {
 
     #[test]
     fn test_empty_board_no_win() {
-        let board = Board::starting_board();
+        let board = Board::starting_board(true);
 
         assert!(!board.current_player_connect4());
         assert!(!board.last_player_connect4());
@@ -318,7 +330,7 @@ mod tests {
 
     #[test]
     fn test_column_fills_and_blocks() {
-        let mut board = Board::starting_board();
+        let mut board = Board::starting_board(true);
 
         for _ in 0..6 {
             assert_eq!(board.play(0), MoveResult::Ok);
@@ -330,7 +342,7 @@ mod tests {
 
     #[test]
     fn test_vertical_win() {
-        let mut board = Board::starting_board();
+        let mut board = Board::starting_board(true);
 
         for _ in 0..3 {
             assert_eq!(board.play(0), MoveResult::Ok);
@@ -343,7 +355,7 @@ mod tests {
 
     #[test]
     fn test_horizontal_win() {
-        let mut board = Board::starting_board();
+        let mut board = Board::starting_board(true);
         for col in 0..3 {
             assert_eq!(board.play(col), MoveResult::Ok);
             assert_eq!(board.play(6), MoveResult::Ok);
@@ -354,8 +366,8 @@ mod tests {
 
     #[test]
     fn test_key_uniqueness_simple() {
-        let mut b0 = Board::starting_board();
-        let mut b1 = Board::starting_board();
+        let mut b0 = Board::starting_board(true);
+        let mut b1 = Board::starting_board(true);
         b0.play(0);
         b1.play(1);
         assert_ne!(b0.key(), b1.key());
@@ -363,7 +375,7 @@ mod tests {
 
     #[test]
     fn test_from_str_empty_board() {
-        let board = Board::from_str(
+        let board = Board::from_str_engine_first(
             "
             . . . . . . .
             . . . . . . .
@@ -380,7 +392,7 @@ mod tests {
 
     #[test]
     fn test_from_str_x_moves_first_equal_counts() {
-        let board = Board::from_str(
+        let board = Board::from_str_engine_first(
             "
             . . . . . . .
             . . . . . . .
@@ -401,7 +413,7 @@ mod tests {
 
     #[test]
     fn test_from_str_o_moves_next_when_one_fewer() {
-        let board = Board::from_str(
+        let board = Board::from_str_engine_first(
             "
             . . . . . . .
             . . . . . . .
@@ -419,7 +431,7 @@ mod tests {
 
     #[test]
     fn test_from_str_row_ordering() {
-        let board = Board::from_str(
+        let board = Board::from_str_engine_first(
             "
             X . . . . . .
             . . . . . . .
@@ -439,7 +451,7 @@ mod tests {
 
     #[test]
     fn test_from_str_vertical_win_detected() {
-        let board = Board::from_str(
+        let board = Board::from_str_engine_first(
             "
             . . . . . . .
             . . . . . . .
@@ -453,7 +465,7 @@ mod tests {
 
     #[test]
     fn test_moves_played_counter() {
-        let mut board = Board::starting_board();
+        let mut board = Board::starting_board(true);
         assert_eq!(board.moves_played, 0);
 
         board.play(0);
@@ -465,7 +477,7 @@ mod tests {
 
     #[test]
     fn test_simultaneous_connect4() {
-        let board = Board::from_str(
+        let board = Board::from_str_engine_first(
             "
             . . . . . . .
             . . . . . . .
@@ -486,7 +498,7 @@ mod tests {
 
     #[test]
     fn test_diagonal_win_forward() {
-        let board = Board::from_str(
+        let board = Board::from_str_engine_first(
             "
             . . . . . . .
             . . . . . . .
@@ -501,7 +513,7 @@ mod tests {
 
     #[test]
     fn test_diagonal_win_backward() {
-        let board = Board::from_str(
+        let board = Board::from_str_engine_first(
             "
             . . . . . . .
             . . . . . . .
@@ -516,8 +528,8 @@ mod tests {
 
     #[test]
     fn test_key_symmetric_positions_equal() {
-        let mut b0 = Board::starting_board();
-        let mut b1 = Board::starting_board();
+        let mut b0 = Board::starting_board(true);
+        let mut b1 = Board::starting_board(true);
         b0.play(0);
         b1.play(6);
         assert_eq!(b0.key(), b1.key(), "Mirrored positions should share a key");
@@ -525,7 +537,7 @@ mod tests {
 
     #[test]
     fn test_full_board_no_win_is_not_win() {
-        let board = Board::from_str(
+        let board = Board::from_str_engine_first(
             "
             X X O O X X O
             O O X X O O X
@@ -542,7 +554,7 @@ mod tests {
 
     #[test]
     fn test_push_shifts_pieces_up() {
-        let mut board = Board::starting_board();
+        let mut board = Board::starting_board(true);
         board.play(0);
         board.play(1);
         board.play(0);
@@ -554,7 +566,7 @@ mod tests {
 
     #[test]
     fn test_no_valid_moves_when_full() {
-        let mut board = Board::starting_board();
+        let mut board = Board::starting_board(true);
 
         for _ in 0..6 {
             for col in 0..7u32 {
@@ -568,7 +580,7 @@ mod tests {
     #[test]
     fn test_sentinel_never_set_after_many_moves() {
         let sentinel_mask: u64 = (0..7u32).fold(0, |acc, col| acc | (1u64 << (col * 7 + 6)));
-        let mut board = Board::starting_board();
+        let mut board = Board::starting_board(true);
 
         for _ in 0..5 {
             for col in 0..7u32 {
