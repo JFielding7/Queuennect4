@@ -138,9 +138,9 @@ fn evaluate_position(
     mut beta: i8,
     transposition_table: &mut ThreadLocalTranspositionTable,
     node_count: &mut u64,
-    stop: &AtomicBool,
+    terminate: &AtomicBool,
 ) -> i8 {
-    if stop.load(Ordering::Relaxed) {
+    if terminate.load(Ordering::Relaxed) {
         return alpha;
     }
 
@@ -207,7 +207,7 @@ fn evaluate_position(
                 -alpha,
                 transposition_table,
                 node_count,
-                stop
+                terminate
             )
         } else {
             let null_eval = -evaluate_position(
@@ -216,7 +216,7 @@ fn evaluate_position(
                 -alpha,
                 transposition_table,
                 node_count,
-                stop
+                terminate
             );
             if null_eval > alpha && null_eval < beta {
                 -evaluate_position(
@@ -225,14 +225,14 @@ fn evaluate_position(
                     -null_eval,
                     transposition_table,
                     node_count,
-                    stop
+                    terminate
                 )
             } else {
                 null_eval
             }
         };
 
-        if stop.load(Ordering::Relaxed) {
+        if terminate.load(Ordering::Relaxed) {
             return alpha;
         }
 
@@ -303,15 +303,15 @@ pub struct SmpEngine {
     worker_txs: Vec<mpsc::SyncSender<WorkerTask>>,
     /// Receiver for results from workers.
     result_rx: mpsc::Receiver<WorkerResult>,
-    /// Stop flag shared with all workers — set when master finishes.
-    stop: Arc<AtomicBool>,
+    /// Terminate flag shared with all workers — set when master finishes.
+    terminate: Arc<AtomicBool>,
 }
 
 impl SmpEngine {
     /// Create the engine and spawn all helper threads.
     pub fn new() -> Self {
         let shared: SharedCache = Arc::new(DashMap::new());
-        let stop = Arc::new(AtomicBool::new(false));
+        let terminate = Arc::new(AtomicBool::new(false));
 
         let (result_tx, result_rx) = mpsc::channel::<WorkerResult>();
 
@@ -322,7 +322,7 @@ impl SmpEngine {
             worker_txs.push(task_tx);
 
             let shared  = Arc::clone(&shared);
-            let stop    = Arc::clone(&stop);
+            let terminate = Arc::clone(&terminate);
             let result_tx = result_tx.clone();
 
             std::thread::spawn(move || {
@@ -345,7 +345,7 @@ impl SmpEngine {
                                 MAX_EVAL,
                                 &mut transposition_table,
                                 &mut nodes,
-                                &stop
+                                &terminate
                             );
 
                             let _ = result_tx.send(WorkerResult { nodes });
@@ -359,7 +359,7 @@ impl SmpEngine {
             shared,
             worker_txs,
             result_rx,
-            stop
+            terminate
         }
     }
 
@@ -367,7 +367,7 @@ impl SmpEngine {
     /// helpers search subtrees using the persistent shared cache.
     /// Returns (eval, node_counts) where index 0 = master.
     fn dispatch_helpers(&self, board: &Board) -> usize {
-        self.stop.store(false, Ordering::Relaxed);
+        self.terminate.store(false, Ordering::Relaxed);
 
         let helper_starts = expand_starting_positions(board, HELPER_THREADS);
         let dispatched = helper_starts.len();
@@ -380,7 +380,7 @@ impl SmpEngine {
     }
 
     fn collect_helpers(&self, dispatched: usize) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.terminate.store(true, Ordering::Relaxed);
 
         for _ in 0..dispatched {
             let _ = self.result_rx.recv();
@@ -400,8 +400,16 @@ impl SmpEngine {
         let mut transposition_table = self.thread_local_transposition_table();
 
         let mut master_nodes = 0u64;
-        let stop_never = AtomicBool::new(false);
-        let eval = evaluate_position(board, MIN_EVAL, MAX_EVAL, &mut transposition_table, &mut master_nodes, &stop_never);
+        let terminate_never = AtomicBool::new(false);
+
+        let eval = evaluate_position(
+            board,
+            MIN_EVAL,
+            MAX_EVAL,
+            &mut transposition_table,
+            &mut master_nodes,
+            &terminate_never
+        );
 
         self.collect_helpers(dispatched);
         (eval, vec![master_nodes])
@@ -412,18 +420,39 @@ impl SmpEngine {
         let mut transposition_table = self.thread_local_transposition_table();
 
         let mut master_nodes = 0u64;
-        let stop_never = AtomicBool::new(false);
+        let terminate_never = AtomicBool::new(false);
 
         let mut iter = board.next_positions_with_col_ordered(&DEFAULT_MOVE_ORDER);
         let (first_col, first_next) = iter.next().expect("Board should not be full");
 
-        let mut alpha = -evaluate_position(&first_next, -MAX_EVAL, -MIN_EVAL, &mut transposition_table, &mut master_nodes, &stop_never);
+        let mut alpha = -evaluate_position(
+            &first_next,
+            -MAX_EVAL,
+            -MIN_EVAL,
+            &mut transposition_table,
+            &mut master_nodes,
+            &terminate_never
+        );
         let mut best_moves = vec![first_col];
 
         for (col, next) in iter {
-            let null_eval = -evaluate_position(&next, -alpha, -alpha + 1, &mut transposition_table, &mut master_nodes, &stop_never);
+            let null_eval = -evaluate_position(
+                &next,
+                -alpha,
+                -alpha + 1,
+                &mut transposition_table,
+                &mut master_nodes,
+                &terminate_never
+            );
             let eval = if null_eval >= alpha {
-                -evaluate_position(&next, -MAX_EVAL, -null_eval, &mut transposition_table, &mut master_nodes, &stop_never)
+                -evaluate_position(
+                    &next,
+                    -MAX_EVAL,
+                    -null_eval,
+                    &mut transposition_table,
+                    &mut master_nodes,
+                    &terminate_never
+                )
             } else {
                 null_eval
             };
@@ -500,7 +529,7 @@ mod tests {
 
         let engine = SmpEngine::new();
         let (eval, _) = engine.solve(&board);
-        assert_eq!(eval, -(MAX_EVAL - 12), "X should be in a winning position, got score={}", eval);
+        assert_eq!(eval, -(MAX_EVAL - 12), "X should be in a winning position, got eval={}", eval);
     }
 
     #[test]
@@ -517,7 +546,7 @@ mod tests {
         let engine = SmpEngine::new();
         let (eval, _) = engine.solve(&board);
 
-        assert_eq!(eval, MAX_EVAL - 6, "X should be in a winning position, got score={}", eval);
+        assert_eq!(eval, MAX_EVAL - 6, "X should be in a winning position, got eval={}", eval);
     }
 
 
@@ -536,7 +565,7 @@ mod tests {
         let engine = SmpEngine::new();
         let (eval, _) = engine.solve(&board);
 
-        assert_eq!(eval, MAX_EVAL - 10, "X should have a forced win from this position, got score={}", eval);
+        assert_eq!(eval, MAX_EVAL - 10, "X should have a forced win from this position, got eval={}", eval);
     }
 
     #[test]
@@ -554,7 +583,7 @@ mod tests {
         let engine = SmpEngine::new();
         let (eval, _) = engine.solve(&board);
 
-        assert_eq!(eval, TOTAL_CELLS as i8, "Should be optimal draw, got score={}", eval);
+        assert_eq!(eval, TOTAL_CELLS as i8, "Should be optimal draw, got eval={}", eval);
     }
 
     #[test]
@@ -572,6 +601,6 @@ mod tests {
         let engine = SmpEngine::new();
         let (eval, _) = engine.solve(&board);
 
-        assert_eq!(eval, -(TOTAL_CELLS as i8), "X should have a forced win from this position, got score={}", eval);
+        assert_eq!(eval, -(TOTAL_CELLS as i8), "Should be un-optimal draw, got eval={}", eval);
     }
 }
