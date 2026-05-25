@@ -288,6 +288,86 @@ impl Board {
         Self::from_str(s, false)
     }
 
+    /// Parse a flat 42-character board string where:
+    ///   - Characters 0–6   = row 0 (bottom)
+    ///   - Characters 7–13  = row 1
+    ///   - ...
+    ///   - Characters 35–41 = row 5 (top)
+    ///   - 'X' = engine piece, 'O' = human piece, '.' = empty
+    ///
+    /// Turn order is derived from piece counts:
+    ///   - Equal X and O  → X (engine) moves next  → is_engine_first = true
+    ///   - One more O than X → O (human) moves next → is_engine_first = false
+    ///
+    /// Returns Err if the string length is wrong, contains invalid characters,
+    /// or piece counts are inconsistent.
+    pub fn from_str_flat(s: &str) -> Result<Board, String> {
+        let chars: Vec<char> = s.chars().collect();
+
+        if chars.len() != (ROWS * COLS) as usize {
+            return Err(format!(
+                "expected {} characters, got {}",
+                ROWS * COLS,
+                chars.len()
+            ));
+        }
+
+        for (i, &c) in chars.iter().enumerate() {
+            if !matches!(c, 'X' | 'O' | '.') {
+                return Err(format!(
+                    "invalid character '{}' at index {}; must be X, O, or .",
+                    c, i
+                ));
+            }
+        }
+
+        let x_count = chars.iter().filter(|&&c| c == 'X').count() as i32;
+        let o_count = chars.iter().filter(|&&c| c == 'O').count() as i32;
+
+        // X (engine) goes first when counts are equal; O (human) goes first when
+        // there is exactly one more O than X (meaning O moved first and has one
+        // more piece on the board).
+        let is_engine_first = match x_count - o_count {
+            0  => true,   // equal counts → engine (X) is next → engine went first
+            -1 => false,  // one extra O  → human  (O) is next → human  went first
+            diff => return Err(format!(
+                "invalid piece counts: X={} O={} (difference must be 0 or -1)",
+                x_count, o_count
+            )),
+        };
+
+        let mut x_bits = 0u64;
+        let mut o_bits = 0u64;
+
+        // chars[i]: row = i / COLS (0 = bottom), col = i % COLS
+        for (i, &c) in chars.iter().enumerate() {
+            let board_row = (i as u32) / COLS;   // 0 = bottom, 5 = top
+            let col       = (i as u32) % COLS;
+            let bit       = col * COL_STRIDE + board_row;
+            match c {
+                'X' => x_bits |= 1u64 << bit,
+                'O' => o_bits |= 1u64 << bit,
+                _   => {}
+            }
+        }
+
+        // X is engine. Determine current/opponent from whose turn it is.
+        let (current, opponent) = if is_engine_first == (x_count == o_count) {
+            // Engine moves next → current = X
+            (x_bits, o_bits)
+        } else {
+            // Human moves next → current = O
+            (o_bits, x_bits)
+        };
+
+        Ok(Board {
+            current,
+            opponent,
+            moves_played: (x_count + o_count) as u32,
+            is_engine_first,
+        })
+    }
+
     pub fn display(&self) {
         let (x_bits, o_bits) = if self.moves_played % 2 == 0 {
             // X is current (even moves played, X moves next)

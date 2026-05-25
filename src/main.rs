@@ -1,104 +1,98 @@
-use std::io::{self, Write};
-use crate::bitboard::Board;
-use crate::smp_engine::SmpEngine;
+use actix_web::{web, App, HttpServer, HttpResponse, middleware};
+use actix_cors::Cors;
+use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 
 mod bitboard;
 mod smp_engine;
 
-fn read_line() -> String {
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-    input.trim().to_string()
+use bitboard::{Board, TOTAL_CELLS};
+use smp_engine::SmpEngine;
+
+struct AppState {
+    engine: Mutex<SmpEngine>,
 }
 
-fn main() {
-    let engine = SmpEngine::new();
+/// 42-character flat board string.
+/// Characters 0–6 = row 0 (bottom), 35–41 = row 5 (top).
+/// 'X' = engine, 'O' = human, '.' = empty.
+#[derive(Deserialize)]
+struct BoardRequest {
+    board: String,
+}
 
-    println!("Queuenect 4 - pieces are inserted from the BOTTOM and push existing pieces up.");
+#[derive(Serialize)]
+struct BestMovesResponse {
+    best_moves: Vec<u32>,
+    /// Eval from the current player's perspective (positive = winning).
+    eval: i8,
+}
 
-    let engine_is_first = loop {
-        print!("Go first or second? (1/2): ");
-        io::stdout().flush().unwrap();
-        match read_line().as_str() {
-            "1" => break false,
-            "2" => break true,
-            _ => println!("Enter 1 or 2."),
-        }
+#[derive(Serialize)]
+struct ErrorResponse {
+    error: String,
+}
+
+/// POST /api/best_moves
+///
+/// Body: { "board": ".............................................."}
+/// Returns: { "best_moves": [3, 4], "eval": 12 }
+async fn best_moves(
+    state: web::Data<AppState>,
+    body: web::Json<BoardRequest>,
+) -> HttpResponse {
+    let board = match Board::from_str_flat(&body.board) {
+        Ok(b)  => b,
+        Err(e) => return HttpResponse::BadRequest().json(ErrorResponse { error: e }),
     };
 
-    let mut board = Board::starting_board(engine_is_first);
-
-    let human_piece = if engine_is_first { "O" } else { "X" };
-    let engine_piece = if engine_is_first { "X" } else { "O" };
-    println!("You are {}, engine is {}.\n", human_piece, engine_piece);
-
-    loop {
-        board.display();
-
-        let curr_conn4 = board.current_player_connect4();
-        let last_conn4 = board.last_player_connect4();
-
-        let last_was_human = if engine_is_first {
-            (board.moves_played & 1) == 1
-        } else {
-            (board.moves_played & 1) == 0
-        };
-
-        if curr_conn4 && last_conn4 {
-            println!("Draw - both players have 4 in a row!");
-            break;
-        }
-        if last_conn4 {
-            if last_was_human {
-                println!("You win!");
-            } else {
-                println!("Engine wins!");
-            }
-            break;
-        }
-        if curr_conn4 {
-            if last_was_human {
-                println!("You lose - you gave the engine 4 in a row!");
-            } else {
-                println!("You win - the engine gave you 4 in a row!");
-            }
-            break;
-        }
-        if board.moves_played == 42 {
-            println!("Draw - board is full!");
-            break;
-        }
-
-        let human_turn = engine_is_first == ((board.moves_played & 1) == 1);
-
-        if human_turn {
-            let col = loop {
-                print!("Your move (0-6): {:?}", engine.best_moves(&board));
-                io::stdout().flush().unwrap();
-
-                match read_line().parse::<u32>() {
-                    Ok(c) if c < 7 => {
-                        if board.is_col_full(c) {
-                            println!("Column {} is full, choose another.", c);
-                        } else {
-                            break c;
-                        }
-                    }
-                    _ => println!("Invalid input, enter a number 0-6."),
-                }
-            };
-
-            board.play(col);
-        } else {
-            print!("Engine thinking...");
-            io::stdout().flush().unwrap();
-
-            let moves = engine.best_moves(&board);
-            let col = moves[rand::random_range(0..moves.len())];
-
-            println!(" plays column {}", col);
-            println!("Best Moves: {:?}", moves);
-            board.play(col);
-        }
+    if board.moves_played == TOTAL_CELLS {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            error: "Board is already full".into(),
+        });
     }
+    if board.last_player_connect4() || board.current_player_connect4() {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            error: "Game is already over".into(),
+        });
+    }
+
+    let engine = state.engine.lock().unwrap();
+    let (eval, _nodes) = engine.solve(&board);
+    let best_moves = engine.best_moves(&board);
+
+    HttpResponse::Ok().json(BestMovesResponse { best_moves, eval })
+}
+
+/// GET /api/health
+async fn health() -> HttpResponse {
+    HttpResponse::Ok().json(serde_json::json!({ "status": "ok" }))
+}
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
+
+    let data = web::Data::new(AppState {
+        engine: Mutex::new(SmpEngine::new()),
+    });
+
+    println!("Listening on http://127.0.0.1:8080");
+
+    HttpServer::new(move || {
+        let cors = Cors::default()
+            .allow_any_origin()
+            .allow_any_method()
+            .allow_any_header();
+
+        App::new()
+            .wrap(cors)
+            .wrap(middleware::Logger::default())
+            .app_data(data.clone())
+            .route("/api/health",     web::get().to(health))
+            .route("/api/best_moves", web::post().to(best_moves))
+    })
+        .bind("127.0.0.1:8080")?
+        .run()
+        .await
 }
