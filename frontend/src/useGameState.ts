@@ -29,7 +29,7 @@ export function gridToFlatString(grid: CellState[][]): string {
     return s;
 }
 
-function checkWin(grid: CellState[][], piece: CellState): { col: number, row: number }[] | null {
+export function checkWin(grid: CellState[][], piece: CellState): { col: number, row: number }[] | null {
     for (let row = 0; row < ROWS; row++) {
         for (let col = 0; col <= COLS - 4; col++) {
             if (grid[col][row] === piece && grid[col+1][row] === piece &&
@@ -61,17 +61,19 @@ function checkWin(grid: CellState[][], piece: CellState): { col: number, row: nu
     return null;
 }
 
-export function dropPiece(grid: CellState[][], col: number, piece: CellState): CellState[][] | null {
+export function playPiece(grid: CellState[][], col: number, piece: CellState): CellState[][] | null {
     if (grid[col][ROWS - 1] !== 'empty') return null;
     const next = grid.map(c => [...c]);
-    for (let row = ROWS - 1; row > 0; row--) {
-        next[col][row] = next[col][row - 1];
+    for (let row = ROWS - 2; row >= 0; row--) {
+        if (next[col][row] !== 'empty' && (row == 0 || next[col][row - 1] !== 'empty')) {
+            next[col][row + 1] = next[col][row];
+        }
     }
     next[col][0] = piece;
     return next;
 }
 
-function isBoardFull(grid: CellState[][]): boolean {
+export function isBoardFull(grid: CellState[][]): boolean {
     return grid.every(col => col[ROWS - 1] !== 'empty');
 }
 
@@ -114,7 +116,7 @@ export function useGameState(): GameState {
             const moves = await fetchBestMoves(currentGrid);
             const col = moves[Math.floor(Math.random() * moves.length)];
 
-            const next = dropPiece(currentGrid, col, enginePiece);
+            const next = playPiece(currentGrid, col, enginePiece);
             if (!next) return;
 
             const engineWins = checkWin(next, enginePiece);
@@ -172,7 +174,7 @@ export function useGameState(): GameState {
         const hPiece = playerOrder === 'first' ? 'red' : 'yellow';
         const ePiece = playerOrder === 'first' ? 'yellow' : 'red';
 
-        const next = dropPiece(grid, col, hPiece);
+        const next = playPiece(grid, col, hPiece);
         if (!next) return;
 
         const playerWins = checkWin(next, hPiece);

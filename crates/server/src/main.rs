@@ -70,6 +70,8 @@ async fn evaluate_moves(
     state: web::Data<AppState>,
     body: web::Json<BoardRequest>,
 ) -> HttpResponse {
+    println!("Evaluate Moves called");
+
     let board = match Board::from_str_flat(&body.board) {
         Ok(b)  => b,
         Err(e) => return HttpResponse::BadRequest().json(ErrorResponse { error: e }),
@@ -81,6 +83,7 @@ async fn evaluate_moves(
         });
     }
     if board.last_player_connect4() || board.current_player_connect4() {
+        println!("Game Already Over");
         return HttpResponse::BadRequest().json(ErrorResponse {
             error: "Game is already over".into(),
         });

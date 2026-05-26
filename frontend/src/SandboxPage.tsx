@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { Stack, Button, Text, Box, Flex, SegmentedControl } from '@mantine/core';
 import { Board } from './Board';
-import {emptyGrid, dropPiece, gridToFlatString, COLS} from './useGameState';
+import { emptyGrid, playPiece, gridToFlatString, COLS } from './useGameState';
 import type { CellState } from "./Cell";
 
 export function SandboxPage({ onNavigate }: { onNavigate: () => void }) {
     const [grid, setGrid] = useState<CellState[][]>(emptyGrid());
     const [paintMode, setPaintMode] = useState<'red' | 'yellow' | 'alternate'>('alternate');
-    const [evals, setEvals] = useState<(number | null)[]>(Array(7).fill(null));
+    const [evals, setEvals] = useState<(number | null)[]>(Array(COLS).fill(null));
     const [isEvaluating, setIsEvaluating] = useState(false);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
     const [currentTurn, setCurrentTurn] = useState<'red' | 'yellow'>('red');
 
@@ -25,7 +26,7 @@ export function SandboxPage({ onNavigate }: { onNavigate: () => void }) {
     }
 
     function handleColumnClick(col: number) {
-        const next = dropPiece(grid, col, currentTurn);
+        const next = playPiece(grid, col, currentTurn);
         if (next) {
             setGrid(next);
             setEvals(Array(COLS).fill(null));
@@ -35,6 +36,7 @@ export function SandboxPage({ onNavigate }: { onNavigate: () => void }) {
 
     async function handleEvaluate() {
         setIsEvaluating(true);
+        setErrorMessage(null);
         try {
             const board = gridToFlatString(grid);
             const res = await fetch('http://localhost:8080/api/evaluate_moves', {
@@ -42,12 +44,18 @@ export function SandboxPage({ onNavigate }: { onNavigate: () => void }) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ board }),
             });
-            if (!res.ok) throw new Error('API Error');
+
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || 'Failed to evaluate position');
+            }
+
             const data = await res.json();
             setEvals(data);
-        } catch (e) {
-            console.error('Failed to evaluate position:', e);
-            alert('Failed to evaluate. Make sure engine is running and board is valid.');
+        } catch (e: any) {
+            console.error('Evaluation error:', e);
+            setErrorMessage(e.message);
+            setTimeout(() => setErrorMessage(null), 5000);
         } finally {
             setIsEvaluating(false);
         }
@@ -68,7 +76,7 @@ export function SandboxPage({ onNavigate }: { onNavigate: () => void }) {
 
                 <Stack align="center" gap={4} mb="md">
                     <Text style={{ fontSize: 28, fontWeight: 500, color: '#e8edf5' }}>
-                        Engine Sandbox
+                        Engine Analysis
                     </Text>
                 </Stack>
 
@@ -82,6 +90,11 @@ export function SandboxPage({ onNavigate }: { onNavigate: () => void }) {
                             onCellClick={handleCellClick}
                             evals={evals}
                         />
+                        {errorMessage && (
+                            <Text c="red" size="sm" mt="md" fw={500} ta="center">
+                                Error: {errorMessage}
+                            </Text>
+                        )}
                     </Box>
 
                     <Box
@@ -182,11 +195,10 @@ export function SandboxPage({ onNavigate }: { onNavigate: () => void }) {
                         root: {
                             borderColor: '#4a5568',
                             color: '#e8edf5',
-                            '&:hover': { backgroundColor: '#1c2535' }
                         }
                     }}
                 >
-                    Back
+                    Return to Home
                 </Button>
             </Stack>
         </Box>

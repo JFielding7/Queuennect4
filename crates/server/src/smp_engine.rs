@@ -16,12 +16,12 @@ const TRANSPOSITION_TABLE_MASK: u64 = (TRANSPOSITION_TABLE_SIZE - 1) as u64;
 const TRANSPOSITION_TABLE_ALL_WAY_MAX_DEPTH: u32 = 18;
 
 const MIN_EVAL: i8 = -MAX_EVAL;
-const MAX_EVAL: i8 = TOTAL_CELLS as i8;
+const MAX_EVAL: i8 = TOTAL_CELLS as i8 + 1;
 
 
 #[inline]
 fn win_eval(moves_played: u32) -> i8 {
-    MAX_EVAL - moves_played as i8 - 1
+    MAX_EVAL - moves_played as i8
 }
 
 /// For making engine drag out drawing games as long as possible
@@ -149,21 +149,28 @@ fn evaluate_position(
     let curr_conn4 = board.current_player_connect4();
     let opp_conn4  = board.last_player_connect4();
 
-    if curr_conn4 && opp_conn4 { return 0 }
-    if curr_conn4 { return win_eval(board.moves_played - 1); }
+    if curr_conn4 && opp_conn4 {
+        return 0
+    }
+    if curr_conn4 {
+        return win_eval(board.moves_played - 1);
+    }
     if opp_conn4  { return -win_eval(board.moves_played - 1); }
 
     // must come after checks above
-    if board.moves_played == TOTAL_CELLS { return 0 }
+    if board.moves_played == TOTAL_CELLS {
+        return 0
+    }
 
     for next in board.next_positions_ordered(&DEFAULT_MOVE_ORDER) {
         if !next.current_player_connect4() && next.last_player_connect4() {
+            // println!("Won here");
             return win_eval(board.moves_played);
         }
     }
 
-    alpha = alpha.max(-win_eval(board.moves_played + 1));
-    beta  = beta.min(win_eval(board.moves_played + 2));
+    alpha = alpha.max(-win_eval(board.moves_played));
+    beta  = beta.min(win_eval(board.moves_played + 1));
     if alpha >= beta {
         return beta;
     }
@@ -246,6 +253,7 @@ fn evaluate_position(
     }
 
     transposition_table.store(key, Bound::Upper(alpha), board.moves_played);
+
     alpha
 }
 
@@ -500,7 +508,7 @@ mod tests {
 
         println!("Best Moves: {:?}", engine.best_moves(&board));
 
-        assert_eq!(eval, 19, "Game should be a draw, got eval={}", eval);
+        assert_eq!(eval, 0, "Game should be a draw, got eval={}", eval);
     }
 
     #[test]
@@ -512,8 +520,26 @@ mod tests {
         let engine = SmpEngine::new();
         let (eval, _) = engine.solve(&board);
 
-        assert_eq!(eval, -10, "Game should be a draw, got eval={}", eval);
+        assert_eq!(eval, 0, "Game should be a draw, got eval={}", eval);
     }
+
+    #[test]
+    fn test_solve_endgame_drawing_position() {
+        let board = Board::from_str_engine_first(
+            "
+            X X . O X X X
+            O O . X O O O
+            X X . O X X X
+            O O . X O O O
+            X X . O X X X
+            O O . X O O O"
+        );
+
+        let engine = SmpEngine::new();
+        let (eval, _) = engine.solve(&board);
+        assert_eq!(eval, 0, "X should be in a winning position, got eval={}", eval);
+    }
+
 
     #[test]
     fn test_solve_losing_position() {
@@ -583,7 +609,7 @@ mod tests {
         let engine = SmpEngine::new();
         let (eval, _) = engine.solve(&board);
 
-        assert_eq!(eval, TOTAL_CELLS as i8, "Should be optimal draw, got eval={}", eval);
+        assert_eq!(eval, 0, "Should be optimal draw, got eval={}", eval);
     }
 
     #[test]
@@ -601,6 +627,6 @@ mod tests {
         let engine = SmpEngine::new();
         let (eval, _) = engine.solve(&board);
 
-        assert_eq!(eval, -(TOTAL_CELLS as i8), "Should be un-optimal draw, got eval={}", eval);
+        assert_eq!(eval, 0, "Should be un-optimal draw, got eval={}", eval);
     }
 }

@@ -315,48 +315,14 @@ impl Board {
     pub fn from_str_flat(s: &str) -> Result<Board, String> {
         let chars: Vec<char> = s.chars().collect();
 
-        if chars.len() != (ROWS * COLS) as usize {
-            return Err(format!(
-                "expected {} characters, got {}",
-                ROWS * COLS,
-                chars.len()
-            ));
-        }
+        Self::validate_input_length(&chars)?;
+        Self::validate_characters(&chars)?;
+        Self::validate_gravity(&chars)?;
 
-        for (i, &c) in chars.iter().enumerate() {
-            if !matches!(c, 'X' | 'O' | '.') {
-                return Err(format!(
-                    "invalid character '{}' at index {}; must be X, O, or .",
-                    c, i
-                ));
-            }
-        }
+        let (x_count, o_count) = Self::count_pieces(&chars);
+        let is_engine_first = Self::validate_turn_order(x_count, o_count)?;
 
-        let x_count = chars.iter().filter(|&&c| c == 'X').count() as i32;
-        let o_count = chars.iter().filter(|&&c| c == 'O').count() as i32;
-
-        let is_engine_first = match x_count - o_count {
-            0  => true,
-            1 => false,
-            _ => return Err(format!(
-                "invalid piece counts: X={} O={} (difference must be 0 or 1)",
-                x_count, o_count
-            )),
-        };
-
-        let mut x_bits = 0u64;
-        let mut o_bits = 0u64;
-
-        for (i, &c) in chars.iter().enumerate() {
-            let board_row = (i as u32) / COLS;
-            let col       = (i as u32) % COLS;
-            let bit       = col * COL_STRIDE + board_row;
-            match c {
-                'X' => x_bits |= 1u64 << bit,
-                'O' => o_bits |= 1u64 << bit,
-                _   => {}
-            }
-        }
+        let (x_bits, o_bits) = Self::build_bitboards(&chars);
 
         let (current, opponent) = if is_engine_first {
             (x_bits, o_bits)
@@ -370,6 +336,67 @@ impl Board {
             moves_played: (x_count + o_count) as u32,
             is_engine_first,
         })
+    }
+
+    fn validate_input_length(chars: &[char]) -> Result<(), String> {
+        if chars.len() != (ROWS * COLS) as usize {
+            return Err(format!("expected {} characters, got {}", ROWS * COLS, chars.len()));
+        }
+        Ok(())
+    }
+
+    fn validate_characters(chars: &[char]) -> Result<(), String> {
+        for (i, &c) in chars.iter().enumerate() {
+            if !matches!(c, 'X' | 'O' | '.') {
+                return Err(format!("invalid character '{}' at index {}; must be X, O, or .", c, i));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_gravity(chars: &[char]) -> Result<(), String> {
+        for col in 0..COLS {
+            let mut found_empty = false;
+            for row in 0..ROWS {
+                let i = (row * COLS + col) as usize;
+                match chars[i] {
+                    '.' => found_empty = true,
+                    _ if found_empty => return Err(format!("Floating piece detected in column {}", col)),
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn count_pieces(chars: &[char]) -> (i32, i32) {
+        let x = chars.iter().filter(|&&c| c == 'X').count() as i32;
+        let o = chars.iter().filter(|&&c| c == 'O').count() as i32;
+        (x, o)
+    }
+
+    fn validate_turn_order(x: i32, o: i32) -> Result<bool, String> {
+        match x - o {
+            0 => Ok(true),
+            1 => Ok(false),
+            _ => Err(format!("Invalid piece counts: First Player (Red)={}; Second Player (Yellow)={}.", x, o)),
+        }
+    }
+
+    fn build_bitboards(chars: &[char]) -> (u64, u64) {
+        let mut x_bits = 0u64;
+        let mut o_bits = 0u64;
+        for (i, &c) in chars.iter().enumerate() {
+            let board_row = (i as u32) / COLS;
+            let col = (i as u32) % COLS;
+            let bit = col * COL_STRIDE + board_row;
+            match c {
+                'X' => x_bits |= 1u64 << bit,
+                'O' => o_bits |= 1u64 << bit,
+                _ => {}
+            }
+        }
+        (x_bits, o_bits)
     }
 
     pub fn display(&self) {

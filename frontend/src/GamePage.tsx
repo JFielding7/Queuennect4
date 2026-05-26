@@ -44,9 +44,6 @@ export function GamePage({onNavigateToSandbox, onNavigateToAnalyze}: {
                     >
                         Queuennect 4
                     </Text>
-                    <Text size="sm" c="#4a5568">
-                        Pieces insert from the bottom — existing pieces shift up
-                    </Text>
                 </Stack>
 
                 <StatusBar status={status} playerOrder={playerOrder} />
@@ -80,30 +77,26 @@ export function GamePage({onNavigateToSandbox, onNavigateToAnalyze}: {
                         }}
                     >
                         <Text size="sm" fw={500} c="#e8edf5" p="md" style={{ borderBottom: '1px solid #252f42' }}>
-                            Move Log
+                            Move History
                         </Text>
 
                         <ScrollArea style={{ flex: 1, height: 410 }} p="md" offsetScrollbars>
                             <Stack gap="xs">
-                                {pairedMoves.length === 0 ? (
-                                    <Text size="xs" c="#4a5568" fs="italic">No moves yet</Text>
-                                ) : (
-                                    pairedMoves.map((pair, index) => (
-                                        <Group key={index} wrap="nowrap" gap="sm">
-                                            <Text size="xs" c="#6b7a99" style={{ minWidth: 20 }}>{pair.turn}.</Text>
+                                {pairedMoves.map((pair, index) => (
+                                    <Group key={index} wrap="nowrap" gap="sm">
+                                        <Text size="xs" c="#6b7a99" style={{ minWidth: 20 }}>{pair.turn}.</Text>
 
-                                            <Text size="sm" fw={500} style={{ width: 24, textAlign: 'center' }} c={pair.first.piece === 'red' ? '#ef4444' : '#facc15'}>
-                                                {String.fromCharCode(65 + pair.first.col)}
+                                        <Text size="sm" fw={500} style={{ width: 24, textAlign: 'center' }} c={pair.first.piece === 'red' ? '#ef4444' : '#facc15'}>
+                                            {String.fromCharCode(65 + pair.first.col)}
+                                        </Text>
+
+                                        {pair.second && (
+                                            <Text size="sm" fw={500} style={{ width: 24, textAlign: 'center' }} c={pair.second.piece === 'red' ? '#ef4444' : '#facc15'}>
+                                                {String.fromCharCode(65 + pair.second.col)}
                                             </Text>
-
-                                            {pair.second && (
-                                                <Text size="sm" fw={500} style={{ width: 24, textAlign: 'center' }} c={pair.second.piece === 'red' ? '#ef4444' : '#facc15'}>
-                                                    {String.fromCharCode(65 + pair.second.col)}
-                                                </Text>
-                                            )}
-                                        </Group>
-                                    ))
-                                )}
+                                        )}
+                                    </Group>
+                                ))}
                             </Stack>
                         </ScrollArea>
                     </Box>
