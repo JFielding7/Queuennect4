@@ -24,8 +24,8 @@ fn win_eval(moves_played: u32) -> i8 {
     MAX_EVAL - moves_played as i8
 }
 
-/// For making engine drag out drawing games as long as possible
-/// Not too useful in practice as it also limits best move options
+/* TODO: For making engine drag out drawing games as long as possible
+    Not too useful in practice as it also limits best move options */
 #[inline]
 fn draw_eval(moves_played: u32, is_engine_first: bool) -> i8 {
     let first_player_turn = (moves_played & 1) == 0;
@@ -149,16 +149,13 @@ fn evaluate_position(
     let curr_conn4 = board.current_player_connect4();
     let opp_conn4  = board.last_player_connect4();
 
-    if curr_conn4 && opp_conn4 {
-        return 0
-    }
-    if curr_conn4 {
+    if curr_conn4 && !opp_conn4 {
         return win_eval(board.moves_played - 1);
     }
-    if opp_conn4  { return -win_eval(board.moves_played - 1); }
-
-    // must come after checks above
-    if board.moves_played == TOTAL_CELLS {
+    if !curr_conn4 && opp_conn4  {
+        return -win_eval(board.moves_played - 1);
+    }
+    if (curr_conn4 && opp_conn4) || board.moves_played == TOTAL_CELLS {
         return 0
     }
 
@@ -360,7 +357,7 @@ impl SmpEngine {
                     }
                 }
             });
-        }//97912323
+        }
 
         SmpEngine {
             shared_cache,

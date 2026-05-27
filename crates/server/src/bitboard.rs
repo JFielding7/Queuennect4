@@ -299,19 +299,6 @@ impl Board {
         Self::from_str(s, false)
     }
 
-    /// Parse a flat 42-character board string where:
-    ///   - Characters 0–6   = row 0 (bottom)
-    ///   - Characters 7–13  = row 1
-    ///   - ...
-    ///   - Characters 35–41 = row 5 (top)
-    ///   - 'X' = engine piece, 'O' = human piece, '.' = empty
-    ///
-    /// Turn order is derived from piece counts:
-    ///   - Equal X and O  → X (engine) moves next  → is_engine_first = true
-    ///   - One more O than X → O (human) moves next → is_engine_first = false
-    ///
-    /// Returns Err if the string length is wrong, contains invalid characters,
-    /// or piece counts are inconsistent.
     pub fn from_str_flat(s: &str) -> Result<Board, String> {
         let chars: Vec<char> = s.chars().collect();
 
@@ -405,10 +392,8 @@ impl Board {
 
     pub fn display(&self) {
         let (x_bits, o_bits) = if self.moves_played % 2 == 0 {
-            // X is current (even moves played, X moves next)
             (self.current, self.opponent)
         } else {
-            // X is opponent (odd moves played, O moves next)
             (self.opponent, self.current)
         };
 
