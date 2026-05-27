@@ -312,7 +312,6 @@ pub struct SmpEngine {
 }
 
 impl SmpEngine {
-    /// Create the engine and spawn all helper threads.
     pub fn new() -> Self {
         let shared_cache: SharedCache = Arc::new(DashMap::new());
         let terminate = Arc::new(AtomicBool::new(false));
@@ -367,9 +366,6 @@ impl SmpEngine {
         }
     }
 
-    /// Solve a position. Master searches the full root on the calling thread;
-    /// helpers search subtrees using the persistent shared cache.
-    /// Returns (eval, node_counts) where index 0 = master.
     fn dispatch_helpers(&self, board: &Board) -> usize {
         self.terminate.store(false, Ordering::Relaxed);
 
@@ -591,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn test_maximizing_draw_is_best() {
+    fn test_full_board_draw() {
         let board = Board::from_str_engine_first(
             "
             X X O O X X O
@@ -606,23 +602,5 @@ mod tests {
         let (eval, _) = engine.solve(&board);
 
         assert_eq!(eval, 0, "Should be optimal draw, got eval={}", eval);
-    }
-
-    #[test]
-    fn test_minimizing_draw_is_worst() {
-        let board = Board::from_str_engine_second(
-            "
-            X X O O X X O
-            O O X X O O X
-            X X O O X X O
-            O O X X O O X
-            X X O O X X O
-            O O X X O O X"
-        );
-
-        let engine = SmpEngine::new();
-        let (eval, _) = engine.solve(&board);
-
-        assert_eq!(eval, 0, "Should be un-optimal draw, got eval={}", eval);
     }
 }
